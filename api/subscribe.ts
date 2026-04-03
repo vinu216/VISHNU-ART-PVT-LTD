@@ -1,88 +1,76 @@
-import nodemailer from "nodemailer";
-import { addSubscriber, isValidSubscriberEmail } from "./_subscriberStore";
+type JsonRecord = Record<string, unknown>;
 
-type SubscribePayload = {
-  email?: string;
-  source?: string;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function normalizeBody(body: unknown): SubscribePayload {
-  try {
-    if (typeof body === "string") return JSON.parse(body) as SubscribePayload;
-    if (body && typeof body === "object") return body as SubscribePayload;
-  } catch {
-    return {};
-  }
-  return {};
-}
+const jsonResponse = (statusCode: number, payload: JsonRecord) => ({
+  statusCode,
+  headers: {
+    "Content-Type": "application/json",
+    ...corsHeaders,
+  },
+  body: JSON.stringify(payload),
+});
 
-async function notifyCompany(email: string, source: string, createdAt: string) {
-  const user = process.env.EMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-  const to = process.env.EMAIL_TO || "vishnuartprivatelimited@gmail.com";
-
-  if (!user || !pass) return;
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
-
-  await transporter.sendMail({
-    from: user,
-    to,
-    subject: "New Newsletter Subscriber - VISHNU ART PVT. LTD.",
-    html: `
-      <div style="font-family:Arial,sans-serif;color:#1f1f1f;">
-        <h2>New Newsletter Subscriber - VISHNU ART PVT. LTD.</h2>
-        <table style="border-collapse:collapse;width:100%;max-width:680px;">
-          <tr>
-            <td style="padding:8px;border:1px solid #ddd;"><strong>Email</strong></td>
-            <td style="padding:8px;border:1px solid #ddd;">${email}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px;border:1px solid #ddd;"><strong>Source</strong></td>
-            <td style="padding:8px;border:1px solid #ddd;">${source}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px;border:1px solid #ddd;"><strong>Joined At</strong></td>
-            <td style="padding:8px;border:1px solid #ddd;">${new Date(createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</td>
-          </tr>
-        </table>
-      </div>
-    `,
-  });
-}
-
-export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ success: false, message: "Method not allowed" });
+export const handler = async (event: { httpMethod?: string; body?: string | null }) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: corsHeaders, body: "" };
   }
 
-  const payload = normalizeBody(req.body);
-  const email = String(payload.email || "").trim().toLowerCase();
-  const source = String(payload.source || "footer-newsletter").trim() || "footer-newsletter";
-
-  if (!isValidSubscriberEmail(email)) {
-    return res.status(400).json({ success: false, message: "Please enter a valid email" });
+  if (event.httpMethod !== "POST") {
+    return jsonResponse(405, { success: false, error: "Method not allowed" });
   }
 
   try {
-    const result = await addSubscriber(email, source);
+    const payload = event.body ? (JSON.parse(event.body) as JsonRecord) : {};
+    const email = String(payload.email ?? "").trim();
+    const name = String(payload.name ?? "Subscriber").trim();
 
-    if (result.status === "duplicate") {
-      return res.status(409).json({ success: false, message: "You are already subscribed" });
+    if (!email) {
+      return jsonResponse(400, { success: false, error: "email is required" });
     }
 
-    try {
-      await notifyCompany(result.entry.email, result.entry.source, result.entry.createdAt);
-    } catch (notificationError) {
-      console.error("Subscriber notification failed", notificationError);
+    const apiKey = process.env.RESEND_API_KEY;
+    const to = process.env.SUBSCRIBE_EMAIL_TO ?? process.env.ORDER_EMAIL_TO;
+    const from = process.env.SUBSCRIBE_EMAIL_FROM ?? process.env.ORDER_EMAIL_FROM;
+
+    if (!apiKey || !to || !from) {
+      return jsonResponse(500, {
+        success: false,
+        error: "Missing RESEND_API_KEY, SUBSCRIBE_EMAIL_TO/ORDER_EMAIL_TO, or SUBSCRIBE_EMAIL_FROM/ORDER_EMAIL_FROM",
+      });
     }
 
-    return res.status(200).json({ success: true, message: "Thank you for joining" });
+    const resendResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject: "New newsletter subscription",
+        reply_to: email,
+        text: `${name} subscribed with email: ${email}`,
+      }),
+    });
+
+    if (!resendResponse.ok) {
+      const errorText = await resendResponse.text();
+      return jsonResponse(502, {
+        success: false,
+        error: "Email provider rejected request",
+        details: errorText,
+      });
+    }
+
+    return jsonResponse(200, { success: true, message: "Subscription submitted" });
   } catch (error) {
-    console.error("Subscription storage failed", error);
-    return res.status(500).json({ success: false, message: "Something went wrong, please try again" });
+    const message = error instanceof Error ? error.message : "Unexpected error";
+    return jsonResponse(500, { success: false, error: message });
   }
-}
+};
