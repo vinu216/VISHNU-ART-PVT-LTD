@@ -60,41 +60,26 @@ type SubscriberRecord = {
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const ORDER_API_CANDIDATES = ["/api/order", "/api/send-order"];
-
 const isPositiveNumber = (value: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0;
 };
 
 async function submitOrderRequest(payload: unknown) {
-  let lastStatus = 0;
+  const response = await fetch("https://api.web3forms.com/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      access_key: "0f99d49b-0194-4145-b1ef-8b5517b66e74",
+      subject: "New Order - VISHNU ART PVT. LTD.",
+      ...payload as any,
+    }),
+  });
 
-  for (const endpoint of ORDER_API_CANDIDATES) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (response.status === 404) {
-      lastStatus = 404;
-      continue;
-    }
-
-    if (!response.ok) {
-      lastStatus = response.status;
-      break;
-    }
-
-    return;
-  }
-
-  if (lastStatus >= 500) {
+  const data = await response.json();
+  if (!data.success) {
     throw new Error("Something went wrong, please try again.");
   }
-
-  throw new Error("Unable to submit order right now. Please try again.");
 }
 
 function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
