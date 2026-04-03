@@ -1,4 +1,1 @@
-import handler from "./order";
-
-// Backward-compatible endpoint alias.
-export default handler;
+export { handler } from "./order";
