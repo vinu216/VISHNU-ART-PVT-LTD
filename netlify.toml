@@ -1,32 +1,17 @@
-# Netlify production configuration for a Vite frontend with serverless API routes.
 [build]
-  # Build command Netlify runs during deploy.
   command = "npm run build"
-  # Vite outputs static files to dist/.
   publish = "dist"
 
 [functions]
-  # Functions are implemented in /api and deployed as Netlify Functions.
   directory = "api"
+  node_bundler = "esbuild"
 
 [[redirects]]
-  # Rewrite /api/* to the corresponding Netlify Function.
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
 
 [[redirects]]
-  # SPA fallback so direct route visits load index.html.
   from = "/*"
   to = "/index.html"
   status = 200
-
-[[headers]]
-  # Basic security headers applied to all responses.
-  for = "/*"
-  [headers.values]
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
-    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
