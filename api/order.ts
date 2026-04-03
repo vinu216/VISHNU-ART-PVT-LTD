@@ -18,10 +18,11 @@ export const handler = async (event: { httpMethod?: string; body?: string | null
 
   try {
     const payload = event.body ? (JSON.parse(event.body) as JsonRecord) : {};
-    const name = String(payload.name ?? "").trim();
-    const email = String(payload.email ?? "").trim();
+    const customer = payload.customer as JsonRecord | undefined;
+    const name = String(customer?.fullName ?? payload.name ?? "").trim();
+    const email = String(customer?.email ?? payload.email ?? "").trim();
 
-    if (!name || !email) return jsonResponse(400, { success: false, error: "name and email are required" });
+    if (!name || !email) return jsonResponse(400, { success: false, error: "Name and email required" });
 
     const apiKey = process.env.RESEND_API_KEY;
     const to = process.env.ORDER_EMAIL_TO;
@@ -35,9 +36,9 @@ export const handler = async (event: { httpMethod?: string; body?: string | null
       body: JSON.stringify({
         from,
         to: [to],
-        subject: `New order from ${name}`,
+        subject: `New Order - VISHNU ART PVT. LTD. - ${name}`,
         reply_to: email,
-        text: `New order submitted:\n\n${JSON.stringify(payload, null, 2)}`,
+        text: `New order received:\n\n${JSON.stringify(payload, null, 2)}`,
       }),
     });
 
@@ -46,7 +47,7 @@ export const handler = async (event: { httpMethod?: string; body?: string | null
       return jsonResponse(502, { success: false, error: "Email failed", details: errorText });
     }
 
-    return jsonResponse(200, { success: true, message: "Order submitted" });
+    return jsonResponse(200, { success: true, message: "Order submitted successfully" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
     return jsonResponse(500, { success: false, error: message });
